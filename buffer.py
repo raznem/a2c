@@ -17,10 +17,6 @@ class Memory:
 
     @property
     def next_obs(self):
-        # next_obs = []
-        # for i in self._next_obs_idx:
-        #     next_obs.append(self._obs[i])
-        # return next_obs
         return self._obs[1:]
 
     @property

@@ -6,6 +6,8 @@ from basic_model import Actor, Critic
 from buffer import Memory
 from logger import StatsLogger
 
+import datetime
+
 ENV_NAME = "Pendulum-v0"
 ITERATIONS = 2000
 GAMMA = 0.95
@@ -13,14 +15,13 @@ A_LR = 3e-3
 C_LR = 3e-4
 BATCH_SIZE = 1000
 STATS_FREQ = 20
-REWARD_DONE = 190.0
+REWARD_DONE = None
 NUM_TARGET_UPDATES = 10
 NUM_CRITIC_UPDATES = 10
 NORMALIZE_ADV = True
-FILENAME = 'a2c_pendulum'
+FILENAME = None
 USE_GPU = False
 
-import datetime
 
 def train_a2c(
     env_name=ENV_NAME,
@@ -36,7 +37,7 @@ def train_a2c(
     normalize_adv=NORMALIZE_ADV,
     filename=FILENAME,
     use_gpu=USE_GPU
-):
+    ):
     if use_gpu and torch.cuda.is_available():
         device = torch.device('cuda')
     else:
@@ -60,22 +61,16 @@ def train_a2c(
     time_list = []
     for i in range(iterations):
         time = datetime.datetime.now()
+
         buffer = Memory()
         collect_batch(env, actor, buffer, batch_size, device)
-        update_critic(
+        advantages = update_critic(
             critic,
             critic_optimizer,
             buffer,
             gamma=gamma,
             num_target_updates=num_target_updates,
             num_critic_updates=num_critic_updates,
-            device=device
-        )
-
-        advantages = calc_advantages(
-            critic,
-            buffer,
-            gamma=gamma,
             device=device
         )
 
@@ -99,7 +94,7 @@ def train_a2c(
             print('Average iteration is', sum(time_list)/len(time_list), 'seconds')
             time_list = []
 
-        if running_reward >= reward_done:
+        if reward_done is not None and running_reward >= reward_done:
             logger.task_done(i)
             break
 
@@ -119,18 +114,19 @@ def collect_batch(
         batch_size: int,
         device: torch.device
     ):
-
     while len(buffer) < batch_size:
         buffer.new_rollout()
         obs = env.reset()
         done = False
+        obs = torch.tensor(obs, dtype=torch.float32, device=device)
         prev_idx = buffer.add_obs(obs)
 
         while not done:
-            obs = torch.unsqueeze(torch.tensor(obs, dtype=torch.float32, device=device), dim=0)
+            obs = torch.unsqueeze(obs, dim=0)
             action, action_logprobs = actor.act(obs)
             action = action.cpu().numpy()[0]
             obs, rew, done, _ = env.step(action)
+            obs = torch.tensor(obs, dtype=torch.float32, device=device)
             next_idx = buffer.add_obs(obs)
             buffer.add_timestep(
                 prev_idx,
@@ -142,6 +138,8 @@ def collect_batch(
             )
             prev_idx = next_idx
 
+    buffer._obs = torch.stack(buffer._obs)
+
 def update_critic(
         critic: torch.nn.Module,
         critic_optimizer: torch.optim.Optimizer,
@@ -150,9 +148,9 @@ def update_critic(
         num_target_updates: int,
         num_critic_updates: int,
         device: torch.device
-):
+    ):
 
-    obs = torch.tensor(buffer.obs, dtype=torch.float32, device=device)
+    obs = buffer.obs
     next_obs = torch.tensor(buffer.next_obs, dtype=torch.float32, device=device)
     reward = torch.tensor(buffer.rewards, dtype=torch.float32, device=device)
     done = torch.tensor(buffer.done, dtype=torch.float32, device=device)
@@ -170,18 +168,6 @@ def update_critic(
             critic_optimizer.zero_grad()
             critic_loss.backward()
             critic_optimizer.step()
-
-def calc_advantages(
-        critic: torch.nn.Module,
-        buffer: Memory,
-        gamma: float,
-        device: torch.device
-    ) -> torch.Tensor:
-
-    obs = torch.tensor(buffer.obs, dtype=torch.float32, device=device)
-    next_obs = torch.tensor(buffer.next_obs, dtype=torch.float32, device=device)
-    reward = torch.tensor(buffer.rewards, dtype=torch.float32, device=device)
-    done = torch.tensor(buffer.done, dtype=torch.float32, device=device)
 
     with torch.no_grad(): # WARNING: should be changed in case of addition of dropout or other mode-dependent layers
         next_state_value = critic(next_obs)
