@@ -17,9 +17,10 @@ REWARD_DONE = 190.0
 NUM_TARGET_UPDATES = 10
 NUM_CRITIC_UPDATES = 10
 NORMALIZE_ADV = True
-FILENAME = 'a2c_logs_pendulum'
+FILENAME = 'a2c_pendulum'
 USE_GPU = False
 
+import datetime
 
 def train_a2c(
     env_name=ENV_NAME,
@@ -87,12 +88,15 @@ def train_a2c(
         )
 
         running_reward = logger.calc_running_reward(buffer)
+
         time_after = datetime.datetime.now()
         time_diff = time_after - time
         time_list.append(time_diff.total_seconds())
+
         if not i % stats_freq:
             logger.print_running_reward(i)
             stats.append([i, logger.running_reward])
+            print('Average iteration is', sum(time_list)/len(time_list), 'seconds')
             time_list = []
 
         if running_reward >= reward_done:
@@ -100,8 +104,9 @@ def train_a2c(
             break
 
         if filename is not None:
-            with open(filename + '.pkl', 'wb') as f:
+            with open(filename + '_logs.pkl', 'wb') as f:
                 pkl.dump(stats, f)
+
 
     if filename is not None:
         torch.save(actor.state_dict(), filename + '_model.pt')
