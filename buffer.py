@@ -10,14 +10,32 @@ class Memory:
         self._action_logprobs = None
         self._rewards = None
         self._done = None
+        self._new_rollout_idx = None # For obs skip previous, for next_obs skip this
+        self.current_len = 0
 
     @property
     def obs(self):
-        return self._obs[:-1]
+        obs = []
+        rollout = 0
+        for i in range(self.current_len):
+            if i != self._new_rollout_idx[rollout] - 1:
+                obs.append(self._obs[i])
+            else:
+                if rollout < len(self._new_rollout_idx) - 1:
+                    rollout += 1
+        return obs
 
     @property
     def next_obs(self):
-        return self._obs[1:]
+        obs = []
+        rollout = 0
+        for i in range(1, self.current_len):
+            if i != self._new_rollout_idx[rollout]:
+                obs.append(self._obs[i])
+            else:
+                if rollout < len(self._new_rollout_idx) - 1:
+                    rollout += 1
+        return obs
 
     @property
     def actions(self):
@@ -39,6 +57,18 @@ class Memory:
     def reward_per_rollout(self):
         return sum(self._rewards) / sum(self._done)
 
+    @property
+    def returns_rollouts(self) -> np.array:
+        returns = []
+        return_ = 0
+
+        for i, done in enumerate(self.done):
+            return_ += self.rewards[i]
+            if done:
+                returns.append(return_)
+                return_ = 0
+        return np.array(returns)
+
     def add_obs(self, obs):
         if self._obs is None:
             self._obs = []
@@ -47,12 +77,16 @@ class Memory:
             self._action_logprobs = []
             self._rewards = []
             self._done = []
+            self._new_rollout_idx = []
 
         self._obs.append(obs)
         obs_idx = len(self._obs) - 1
+        self.current_len += 1
         return obs_idx
 
-    def add_timestep(self, obs_idx, next_obs_idx, action, action_logprobs, reward, done):
+    def add_timestep(
+        self, obs_idx, next_obs_idx, action, action_logprobs, reward, done
+    ):
         self._next_obs_idx.append(next_obs_idx)
         self._actions.append(action)
         self._action_logprobs.append(action_logprobs)
@@ -68,17 +102,16 @@ class Memory:
     def __getitem__(self, obs_idx):
         next_obs_idx = self._next_obs_idx[obs_idx]
         return (
-            np.array(self._obs[obs_idx]),
-            np.array(self._obs[next_obs_idx]),
-            np.array(self._actions[obs_idx]),
-            np.array(self._action_logprobs[obs_idx]),
-            np.array(self._rewards[obs_idx]),
-            np.array(self._done[obs_idx])
+            self._obs[obs_idx],
+            self._obs[next_obs_idx],
+            self._actions[obs_idx],
+            self._action_logprobs[obs_idx],
+            self._rewards[obs_idx],
+            self._done[obs_idx],
         )
 
-    def new_rollout(self):
-        if self._obs is not None:
-            self._obs.pop()
+    def end_rollout(self):
+        self._new_rollout_idx.append(self.current_len)
 
 
 class ReplayBuffer(Memory):

@@ -8,12 +8,12 @@ from logger import StatsLogger
 
 import datetime
 
-ENV_NAME = "Pendulum-v0"
+ENV_NAME = "CartPole-v0"
 ITERATIONS = 2000
 GAMMA = 0.95
 A_LR = 3e-3
 C_LR = 3e-4
-BATCH_SIZE = 1000
+BATCH_SIZE = 200
 STATS_FREQ = 20
 REWARD_DONE = None
 NUM_TARGET_UPDATES = 10
@@ -115,7 +115,6 @@ def collect_batch(
         device: torch.device
     ):
     while len(buffer) < batch_size:
-        buffer.new_rollout()
         obs = env.reset()
         done = False
         obs = torch.tensor(obs, dtype=torch.float32, device=device)
@@ -137,8 +136,7 @@ def collect_batch(
                 done
             )
             prev_idx = next_idx
-
-    buffer._obs = torch.stack(buffer._obs)
+        buffer.end_rollout()
 
 def update_critic(
         critic: torch.nn.Module,
@@ -150,8 +148,8 @@ def update_critic(
         device: torch.device
     ):
 
-    obs = buffer.obs
-    next_obs = torch.tensor(buffer.next_obs, dtype=torch.float32, device=device)
+    obs = torch.stack(buffer.obs)
+    next_obs = torch.stack(buffer.next_obs)
     reward = torch.tensor(buffer.rewards, dtype=torch.float32, device=device)
     done = torch.tensor(buffer.done, dtype=torch.float32, device=device)
 
